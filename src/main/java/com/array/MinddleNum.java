@@ -29,6 +29,8 @@ public class MinddleNum {
      *
      * 如果数组长度是奇数，左边的大顶堆中存放 n/2 个数，右边的小顶堆存放n/2 个数
      * 数组遍历完之后，大顶堆和小顶堆的堆顶的平均数就是 中位数
+     *
+     * 时间复杂度 O(logN)
      * @param array
      * @return
      */
@@ -63,7 +65,7 @@ public class MinddleNum {
                 }
             }
         }
-        if (array.length % 2 == 0){
+        if (maxHeap.size() == minHeap.size()){
             return (maxHeap.peek() + minHeap.peek()) / 2;
         }
         return maxHeap.peek();

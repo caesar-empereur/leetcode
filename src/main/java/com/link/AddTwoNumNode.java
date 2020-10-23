@@ -22,6 +22,8 @@ public class AddTwoNumNode {
      * 两次遍历
      * 第一次遍历：两个链表对应每个节点分别取和，若含有空节点则空节点取0，产生一个新链表。
      * 第二次遍历：对取完和的新链表遍历，判断当前的val是否大于等于10，大于或等于则其自身-10其next加1，若next为空则新建0节点
+     *
+     * 时间复杂度：O(max(m,n))，其中 m,n 为两个链表的长度
      * @param node1
      * @param node2
      * @return

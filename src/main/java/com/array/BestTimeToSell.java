@@ -20,6 +20,11 @@ public class BestTimeToSell {
 
     }
 
+    /**
+     * 时间复杂度 O(N)
+     * @param prices
+     * @return
+     */
     private static int getMaxProfit(int[] prices){
         //这里初始价格是 整数最大值，正常情况下任何整数都不能大于这个值
         int minPrice = Integer.MAX_VALUE;

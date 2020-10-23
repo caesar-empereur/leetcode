@@ -25,6 +25,8 @@ public class TwoNumSum {
     }
 
     /**
+     * 时间复杂度 O(N)
+     *
      * @param array
      * @param sum
      * @return

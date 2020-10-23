@@ -25,6 +25,7 @@ public class DeleteDuplicateNum {
      因此我们必须把它（nums[j]nums[j]）的值复制到 nums[i + 1]nums[i+1]。然后递增 ii，
      接着我们将再次重复相同的过程，直到 jj 到达数组的末尾为止
 
+     时间复杂度 O(N)
      * @param array
      * @return
      */

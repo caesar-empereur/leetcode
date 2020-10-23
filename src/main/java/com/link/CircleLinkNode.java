@@ -20,6 +20,11 @@ public class CircleLinkNode {
 
     }
 
+    /**
+     * 时间复杂度：O(n)
+     * @param head
+     * @return
+     */
     private static boolean isLinkCircle(Node head){
         if (head == null || head.next == null){
             return false;
