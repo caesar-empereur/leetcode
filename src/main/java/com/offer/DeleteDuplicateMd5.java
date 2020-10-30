@@ -16,7 +16,7 @@ public class DeleteDuplicateMd5 {
 
     /**
      * 这里创建长度为 10亿的位图，
-     * 长度为 10亿 bit 的位图，内存空间是 1G
+     * 长度为 10亿 bit 的位图，内存空间是 0.12 G
      */
     private static final int BIT_SIZE = 1000_000_000;
     private static final BitSet BIT_SET = new BitSet(BIT_SIZE);
@@ -42,7 +42,7 @@ public class DeleteDuplicateMd5 {
 
     /**
      * 这里使用布隆过滤器的思路来实现，不需要存储这么多的数据到内存，只需要
-     * 判断重复即可，需要的内存只有 1GB
+     * 判断重复即可，需要的内存只有 0.12 GB
      *
      * 根据MD5(字符串) 的哈希函数与位图长度计算出位图的下标，如果这个下标被置为1，说明当前数据重复，
      * 直接返回重复，如果下标是 0，说明数据不重复，把下标置为1
