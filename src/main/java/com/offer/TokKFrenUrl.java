@@ -8,8 +8,8 @@ import java.util.*;
 public class TokKFrenUrl {
 
     /**
-     * 这里创建长度为 10亿的位图，
-     * 长度为 10亿 bit 的位图，内存空间是 0.25 G
+     * 这里创建长度为 20亿的位图，
+     * 长度为 20亿 bit 的位图，内存空间是 0.25 G
      */
     private static final int BIT_SIZE = 2000_000_000;
     private static final BitSet BIT_SET = new BitSet(BIT_SIZE);
