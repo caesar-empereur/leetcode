@@ -63,7 +63,7 @@ public class TokKFrenUrl {
     private static final Integer SIZE_TIMES = 5;
 
     /*
-    优先级队列就是大小顶堆的数据结果，默认是小顶堆，
+    优先级队列就是大小顶堆的数据结构，默认是小顶堆，
     这里用比较器 UrlCount 的 count属性 整数比较，也是小顶堆
     小顶堆的容量是 5，就是存放出现次数前5的URL
      */
