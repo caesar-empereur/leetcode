@@ -1,354 +1,474 @@
-## 20G的文件，每行存放1个URL，请用1G的内存计算出重复次数最多的前100个URL
-
-- 解题思路：位图过滤不重复，分治法，HashMap，小顶堆筛选
-    
-    - 1 先用位图过滤不重复的数据
-        ```
-        为什么要过滤不重复的数据，因为不重复的数据在后面根本不用计算，
-        这样筛选掉不重复的是为了减少不必要的计算量
-        ```
-        - 先构建一个长度为 20亿bit的位图，需要内存为 0.25 GB
-        - 把 20亿个URL(640GB)的数据依次根据位图长度算出位图下标
-        - 如果对应下标被设置为1，说明数据重复，将重复数据输出到另一个文件
-        - 如果下标是 0，说明当前数据不存在重复，将对应下标设置为 1
-        - 20亿的数据经过处理之后输出的文件结果，数量为 X，大小范围为 1-10亿
-        - 如果结果文件小于 100 万个(0.64GB), 则不用分治处理了，直接放到 map 一次处理完
-        - 如果结果文件大于 100 万个(0.64GB), 则分成 Y=X/100万 份，例如1亿个，则分成100份
-    - 2 将上一步的结果集 分治处理 
-        - 将大文件的URL依次对 Y 哈希取模算出是在 Y 份文件的第几份
-        - 相同的URL肯定会分到同一份文件
-    - 3 将每一份文件的数据放到 HashMap 中处理
-        ```
-        在单个 Map 里面能处理的最大数据为 100 万个 (0.64 GB)
-        因此在分治处理的时候要把每一份数据切割到能放到内存处理,因此每份数据最大 100 万个 (0.64 GB)
-        ```
-        - 将每一份文件的结果放到 HashMap 中，key是URL，value是出现次数
-        - 每一份文件的URL放到 Map 的方式为先判断是否存在 key 相同的URL,存在则value加1，否则把url put 进去
-    - 4 构建一个容量为 1000 的小顶堆，堆的关键字的比较器是 Map 的value 次数大小比较
-        - 每生成一个Map,就将 Map 遍历，如果小顶堆的元素数量小于1000个，则将 Map 的key放到堆中
-        - 如果小顶堆的元素数量等于 1000，则与堆顶的元素的次数比较，比堆顶大，则将堆顶替换为新的key
-        - 每一份文件拿到 Map 中处理完之后，将map清空，继续将下一份文件拿进来用相同方式处理
-        - 这样每一份文件用一个map处理之后，都是通过遍历map与小顶堆比较，通过不断与堆的比较替换
-        - 最终所有文件处理完了之后，容量为 1000 的小顶堆的结果输出，就是出现次数 前 1000 的URL
-
-- 代码
+## 双指针(快慢指针)问题
+- 找到链表的中间节点(876)
 ```
-package com.offer;
+/**
+ * 我们可以继续优化方法二，用两个指针 slow 与 fast 一起遍历链表。slow 一次走一步，fast 一次走两步。
+ * fast 的速度是 slow 的2倍
+ * 那么当 fast 到达链表的末尾时，slow 必然位于中间
 
-import java.util.*;
+ 时间复杂度：O(n)
+ * @param head
+ * @return
+ */
+private static Node findMiddleNode(Node head){
+    if (head == null || head.next == null){
+        return null;
+    }
+
+    Node slow = head;
+    Node fast = head;
+    while (fast != null && fast.next != null){
+        slow = slow.next;
+        fast = fast.next.next;
+    }
+    return slow;
+}
+```
+
+- 原地删除重复数组(26)
+```
+给定一个排序数组，你需要在 原地 删除重复出现的元素，使得每个元素只出现一次，返回移除后数组的新长度。
+
+不要使用额外的数组空间，你必须在 原地 修改输入数组 并在使用 O(1) 额外空间的条件下完成。
 
 /**
- * Created by yang on 2020/10/30.
+ * 双指针法
+
+ 数组完成排序后，我们可以放置两个指针 i 和 j，其中 i 是慢指针，而 j 是快指针。
+ 只要 nums[i] = nums[j]，我们就增加 j 以跳过重复项。
+
+ 当我们遇到 nums[j] =nums[i] 时，跳过重复项的运行已经结束，
+ 因此我们必须把它（nums[j]）的值复制到 nums[i + 1]nums[i+1]。然后递增 i，
+ 接着我们将再次重复相同的过程，直到 j 到达数组的末尾为止
+
+ 时间复杂度 O(N)
+ * @param array
+ * @return
  */
-public class TokKFrenUrl {
-
-    /**
-     * 这里创建长度为 20亿的位图，
-     * 长度为 20亿 bit 的位图，内存空间是 0.25 G
-     */
-    private static final int BIT_SIZE = 2000_000_000;
-    private static final BitSet BIT_SET = new BitSet(BIT_SIZE);
-
-    //用2个list来模拟原始的URL数据与去掉不重复之后的URL数据
-    private static final List<String> BEFORE_LIST = new ArrayList<>();
-    private static final List<String> AFTER_LIST = new ArrayList<>();
-
-    /*
-    这里用 5 来模拟最终要算出出现次数前 5 的URL，因此小顶堆的容量也是 5
-     */
-
-    private static final Integer SIZE_TIMES = 5;
-
-    /*
-    优先级队列就是大小顶堆的数据结构，默认是小顶堆，
-    这里用比较器 UrlCount 的 count属性 整数比较，也是小顶堆
-    小顶堆的容量是 5，就是存放出现次数前5的URL
-     */
-    private static final PriorityQueue<UrlCount> MIN_HEAP = new PriorityQueue<>(Comparator.comparing(UrlCount::getCount));
-
-    //构造一些测试数据
-    static {
-        for (int i=10; i>0; i--){
-            //添加一些重复的数据
-            String url = UUID.randomUUID().toString();
-            for (int j=0; j< i; j++){
-                BEFORE_LIST.add(url);
-            }
-            //添加一些不重复的数据
-            BEFORE_LIST.add(UUID.randomUUID().toString());
-        }
-        System.out.println("原始数据为 ");
-        for (String s : BEFORE_LIST) {
-            System.out.println(s);
-        }
-        System.out.println("原始数据统计结果");
-        countData(BEFORE_LIST);
+private static int returnLengthAfterRemoveDup(int[] array){
+    if (array.length == 0){
+        return 0;
     }
-
-    private static void countData(List<String> list){
-        Map<String, Integer> map = new HashMap<>();
-        for (String s : list) {
-            if (map.containsKey(s)){
-                map.put(s, map.get(s) + 1);
-            } else {
-                map.put(s, 1);
-            }
-        }
-        for (Map.Entry<String, Integer> entry : map.entrySet()) {
-            System.out.println("URL: " + entry.getKey() + " 出现次数为： " + entry.getValue());
+    int i = 0;
+    for (int j = 1; j< array.length; j++){
+        if (array[i] != array[j]){
+            i++;
+            array[i] = array[j];
         }
     }
+    return i+1;
+}
+```
 
-    public static void main(String[] args) {
-        /*
-        第一步
-        这里先把数据去掉那些不重复的
-         */
-        for (String s : BEFORE_LIST) {
-            if (isUrlRepeated(s)){
-                if (!AFTER_LIST.contains(s)){
-                    /*
-                    一个URL出现3次，第一次进位图是不重复的，
-                    因此第二次出现重复的时候，要把第一次的URL也加进来到结果集中
-                    判断条件是结果集还没有这个URL，如果有的话就不用再添加了
-                    不然出现3次的URL，最后只会添加2次到结果集中
+- 链表判断是否为环形(141)
+```
+我们可以根据上述思路来解决本题。具体地，我们定义两个指针，一快一满。慢指针每次只移动一步，
+而快指针每次移动两步。初始时，慢指针在位置 head，而快指针在位置 head.next。
+这样一来，如果在移动的过程中，快指针反过来追上慢指针，就说明该链表为环形链表。
+否则快指针将到达链表尾部，该链表不为环形链表
 
-                     */
-                    AFTER_LIST.add(s);
-                }
-                AFTER_LIST.add(s);
-            }
-        }
-        System.out.println("原始数据过滤掉不重复后的统计结果 ");
-        countData(AFTER_LIST);
-
-        /*
-        第二步
-        
-        这一步将过滤后的结果数据分治处理，将数据根据哈希分为多份，模拟海量数据分治处理
-        使用的方式就是将每一个URL的哈希码堆结果数据的数量长度哈希取模，算出是在 map 中的哪一个 整形的 key
-        相同的URL 肯定会分到同一个map 的key 里面的
-         */
-        Map<Integer, List<String>> map = new HashMap<>();
-        int modSize = AFTER_LIST.size()%2==0? AFTER_LIST.size() - 1: AFTER_LIST.size();
-        for (String s : AFTER_LIST) {
-            Integer index = modSize & hash(s);
-            List<String> list = map.get(index);
-            if (list == null){
-                list = new ArrayList<>();
-            }
-            list.add(s);
-            map.put(index, list);
-        }
-
-        // 这里的 map 的value就是最终分成多份数据
-        for (List<String> list : map.values()) {
-            calcListToHeap(list);
-        }
-
-        System.out.println("出现次数排名前5的URL为");
-
-        while (!MIN_HEAP.isEmpty()){
-            UrlCount urlCount = MIN_HEAP.poll();
-            System.out.println(urlCount.url + " 次数 " + urlCount.getCount());
-        }
-    }
-
-    private static int hash(Object key) {
-        int h;
-        return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
-    }
-
-    /**
-     * 将处理后的数据分成多份list，每一份调用这个方法
-     * 将list转换成 map 之后与小顶堆轮流比较
-     */
-    private static void calcListToHeap(List<String> list){
-        if (list == null || list.size() == 0){
-            return;
-        }
-        /*
-        这里是第三步
-        将每一份 list转换成 map，就是URL跟次数的对应
-         */
-        Map<String, Integer> urlCountMap = new HashMap<>();
-        urlCountMap.clear();
-        for (String s : list) {
-            if (urlCountMap.containsKey(s)){
-                urlCountMap.put(s, urlCountMap.get(s) + 1);
-            } else {
-                urlCountMap.put(s, 1);
-            }
-        }
-        /*
-        这里是第四步
-        将转换成 map 之后与小顶堆轮流比较
-         */
-        for (String key : urlCountMap.keySet()) {
-            UrlCount urlCount = new UrlCount(key, urlCountMap.get(key));
-            if (MIN_HEAP.size() < SIZE_TIMES){
-                /*
-                如果小顶堆的元素数量还没到 5，就就把新的URL跟次数组成一个对象直接添加到堆中
-                 */
-                MIN_HEAP.offer(urlCount);
-            } else if (urlCountMap.get(key) > MIN_HEAP.peek().getCount()){
-                /*
-                如果小顶堆数量大于等于 5，就要进行堆顶的元素的比较
-                如果新的URL的次数比堆顶元素的次数大，就把新的URL跟次数组成一个对象添加到堆中
-                添加完之后堆会重新调整为小顶堆
-                 */
-                MIN_HEAP.poll();
-                MIN_HEAP.offer(urlCount);
-            }
-        }
-    }
-
-    /**
-     * 这里使用布隆过滤器的思路来实现，不需要存储这么多的数据到内存，只需要
-     * 判断重复即可，需要的内存只有 0.12 GB
-     *
-     * 根据(字符串) 的哈希函数与位图长度计算出位图的下标，如果这个下标被置为1，说明当前数据重复，
-     * 直接返回重复，如果下标是 0，说明数据不重复，把下标置为1
-     *
-     * @param url
-     * @return
-     */
-    private static boolean isUrlRepeated(String url){
-        if (url == null || url.equals("")){
-            return false;
-        }
-        int hashcode = url.hashCode();
-        int index = (BIT_SIZE - 1) & hashcode;
-        if (BIT_SET.get(index)){
-            return true;
-        }
-        BIT_SET.set(index);
+/**
+ * 时间复杂度：O(n)
+ * @param head
+ * @return
+ */
+private static boolean isLinkCircle(Node head){
+    if (head == null || head.next == null){
         return false;
     }
-
-    /*
-    这里使用一个url跟次数组成的对象来当作小顶堆的元素，方便比较与结果输出
-     */
-    private static class UrlCount{
-        private String url;
-        private Integer count;
-
-        public Integer getCount() {
-            return count;
+    Node slow = head;
+    Node fast = head.next;
+    while (slow != fast){
+        //如果链表不是环，则尾节点的next肯定为空
+        if (fast == null || fast.next == null){
+            return false;
         }
+        slow = slow.next;
+        fast = fast.next.next;
+    }
+    //跳出循环说明 快慢2个指针遇上了
+    return true;
+}
+```
 
-        public UrlCount(String url, Integer count) {
-            this.url = url;
-            this.count = count;
+- 三数之和(15)
+```
+/** 15
+ * 给你一个包含 n 个整数的数组 nums，判断 nums 中是否存在三个元素 a，b，c ，使得 a + b + c = 0 ？
+ *
+ * 请你找出所有满足条件且不重复的三元组。
+ *
+ * 注意：答案中不可以包含重复的三元组。
+ */
+
+/**
+ * 排序 + 双指针
+ * 本题的难点在于如何去除重复解
+ *
+ * 对数组进行排序。
+ *
+ * 遍历排序后数组：
+     * 若 nums[i]>0nums[i]>0：因为已经排序好，所以后面不可能有三个数加和等于 00，直接返回结果。
+     * 对于重复元素：跳过，避免出现重复解
+     * 令左指针 L=i+1L=i+1，右指针 R=n-1R=n−1，当 L<RL<R 时，执行循环：
+         * 当 nums[i]+nums[L]+nums[R]==0nums[i]+nums[L]+nums[R]==0，执行循环，判断左界和右界是否和下一位置重复，
+         * 去除重复解。并同时将 L,RL,R 移到下一位置，寻找新的解
+         * 若和大于 00，说明 nums[R]nums[R] 太大，RR 左移
+         * 若和小于 00，说明 nums[L]nums[L] 太小，LL 右移
+ *
+ *
+ * 复杂度分析
+ * 时间复杂度：O(N^2)
+ * 数组排序 O(NlogN), 遍历数组 O(n)，双指针遍历 O(n)
+ * 总体 O(NlogN) + O(n) * O(n), O(N^2)
+ *
+ * 空间复杂度：O(1)
+ *
+ */
+private static List<ThreeNum> getSum(int[] nums){
+    List<ThreeNum> rtList = new ArrayList<>();
+    if (nums.length<3){
+        return rtList;
+    }
+    //先把数组排序
+    Arrays.sort(nums);
+    if (nums[0]>0){
+        return rtList;
+    }
+    for (int i=0; i< nums.length - 1; i++){
+        if (nums[i]==nums[i+1]){
+            continue;
+        }
+        int left = i+1;
+        int right = nums.length-1;
+        while (left<right){
+            //如果出现3数之和等于 0
+            if (nums[i]+nums[left]+nums[right] == 0){
+                //先把当前结果保存起来
+                rtList.add(new ThreeNum(nums[i], nums[left], nums[right]));
+                //如果左边的数出现跟下一个重复，则左边指针右移
+                if (nums[left] == nums[left+1]){
+                    left = left + 1;
+                }
+                //如果右边的数出现跟上一个重复，则右指针左移
+                if (nums[right] == nums[right-1]){
+                    right = right - 1;
+                }
+                //不存在重复的情况下，左指针右移，右指针左移
+                left = left + 1;
+                right = right - 1;
+                //如果出现结果大于0，说明右边的指针的数太大，再向左边移动一位
+            } else if (nums[i]+nums[left]+nums[right] > 0){
+                right = right - 1;
+            } else {
+                left = left + 1;
+            }
         }
     }
+    return rtList;
 }
-
 ```
 
-- 代码输出结果
+## top k 问题
+- 大数据量的前多少的问题
+    - 位图过滤，小顶堆筛选
+    
+    - 题目：20G的文件，每行存放1个URL，请用1G的内存计算出重复次数最多的前100个URL
+    
+    - 解题思路：位图过滤不重复，分治法，HashMap，小顶堆筛选
+        
+        - 1 先用位图过滤不重复的数据
+            ```
+            为什么要过滤不重复的数据，因为不重复的数据在后面根本不用计算，
+            这样筛选掉不重复的是为了减少不必要的计算量
+            ```
+            - 先构建一个长度为 20亿bit的位图，需要内存为 0.25 GB
+            - 把 20亿个URL(640GB)的数据依次根据位图长度算出位图下标
+            - 如果对应下标被设置为1，说明数据重复，将重复数据输出到另一个文件
+            - 如果下标是 0，说明当前数据不存在重复，将对应下标设置为 1
+            - 20亿的数据经过处理之后输出的文件结果，数量为 X，大小范围为 1-10亿
+            - 如果结果文件小于 100 万个(0.64GB), 则不用分治处理了，直接放到 map 一次处理完
+            - 如果结果文件大于 100 万个(0.64GB), 则分成 Y=X/100万 份，例如1亿个，则分成100份
+        - 2 将上一步的结果集 分治处理 
+            - 将大文件的URL依次对 Y 哈希取模算出是在 Y 份文件的第几份
+            - 相同的URL肯定会分到同一份文件
+        - 3 将每一份文件的数据放到 HashMap 中处理
+            ```
+            在单个 Map 里面能处理的最大数据为 100 万个 (0.64 GB)
+            因此在分治处理的时候要把每一份数据切割到能放到内存处理,因此每份数据最大 100 万个 (0.64 GB)
+            ```
+            - 将每一份文件的结果放到 HashMap 中，key是URL，value是出现次数
+            - 每一份文件的URL放到 Map 的方式为先判断是否存在 key 相同的URL,存在则value加1，否则把url put 进去
+        - 4 构建一个容量为 1000 的小顶堆，堆的关键字的比较器是 Map 的value 次数大小比较
+            - 每生成一个Map,就将 Map 遍历，如果小顶堆的元素数量小于1000个，则将 Map 的key放到堆中
+            - 如果小顶堆的元素数量等于 1000，则与堆顶的元素的次数比较，比堆顶大，则将堆顶替换为新的key
+            - 每一份文件拿到 Map 中处理完之后，将map清空，继续将下一份文件拿进来用相同方式处理
+            - 这样每一份文件用一个map处理之后，都是通过遍历map与小顶堆比较，通过不断与堆的比较替换
+            - 最终所有文件处理完了之后，容量为 1000 的小顶堆的结果输出，就是出现次数 前 1000 的URL
+    
+## 递归问题
+- 链表反转(206)
 ```
-原始数据为 
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8
-9e489402-3a87-45a1-8530-fe0f8ae008bb
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-85295055-bc46-43db-9c82-3b29dd83fe2d
-6e438c66-3ba6-4905-9287-f8276542b53f
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-c9eb3280-abc4-459a-943a-939e9f5a80f4
-100172c0-3bbe-432c-99dd-e57103072cb7
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b
-78cdfe6b-21d0-4d29-8ad0-f8894ab8efd8
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc
-2346c02f-9a45-41aa-bcdf-d416d6cf9434
-7e217d04-d0df-4424-a14f-1260d589a862
-7e217d04-d0df-4424-a14f-1260d589a862
-7e217d04-d0df-4424-a14f-1260d589a862
-7e217d04-d0df-4424-a14f-1260d589a862
-7e217d04-d0df-4424-a14f-1260d589a862
-d58212bf-3183-4722-8229-e8b70a0c2eb5
-a5b30f59-bfb6-4683-9194-dbdbed3b9448
-a5b30f59-bfb6-4683-9194-dbdbed3b9448
-a5b30f59-bfb6-4683-9194-dbdbed3b9448
-a5b30f59-bfb6-4683-9194-dbdbed3b9448
-fb6c7729-dc7e-474c-a0e5-709ab93f5675
-7d686a91-4815-4999-b03a-47cb4da64931
-7d686a91-4815-4999-b03a-47cb4da64931
-7d686a91-4815-4999-b03a-47cb4da64931
-b369bf63-8e3e-4cd2-bff9-9e10c94c4a97
-a0229f07-5e90-4da4-ad5a-662792c4f6b3
-a0229f07-5e90-4da4-ad5a-662792c4f6b3
-53c748c4-1494-4d20-9069-6d58c84a3fe4
-7d71aa1e-09d9-4b8e-b6be-65539d303aa8
-816ce6ad-db9f-4a7d-8c05-e94420d32256
-原始数据统计结果
-URL: 7e217d04-d0df-4424-a14f-1260d589a862 出现次数为： 5
-URL: 7d686a91-4815-4999-b03a-47cb4da64931 出现次数为： 3
-URL: b369bf63-8e3e-4cd2-bff9-9e10c94c4a97 出现次数为： 1
-URL: d58212bf-3183-4722-8229-e8b70a0c2eb5 出现次数为： 1
-URL: 2346c02f-9a45-41aa-bcdf-d416d6cf9434 出现次数为： 1
-URL: fb6c7729-dc7e-474c-a0e5-709ab93f5675 出现次数为： 1
-URL: 78d0b9b1-a348-4609-bbb1-e4d61c900b7b 出现次数为： 7
-URL: a0229f07-5e90-4da4-ad5a-662792c4f6b3 出现次数为： 2
-URL: 78cdfe6b-21d0-4d29-8ad0-f8894ab8efd8 出现次数为： 1
-URL: 7d71aa1e-09d9-4b8e-b6be-65539d303aa8 出现次数为： 1
-URL: 816ce6ad-db9f-4a7d-8c05-e94420d32256 出现次数为： 1
-URL: 3b430af0-fd71-4ba8-8d4e-e96b958e44f8 出现次数为： 10
-URL: c9eb3280-abc4-459a-943a-939e9f5a80f4 出现次数为： 8
-URL: a5b30f59-bfb6-4683-9194-dbdbed3b9448 出现次数为： 4
-URL: 53c748c4-1494-4d20-9069-6d58c84a3fe4 出现次数为： 1
-URL: 9e489402-3a87-45a1-8530-fe0f8ae008bb 出现次数为： 1
-URL: 85295055-bc46-43db-9c82-3b29dd83fe2d 出现次数为： 9
-URL: 6e438c66-3ba6-4905-9287-f8276542b53f 出现次数为： 1
-URL: 5f06f65b-9d1a-4746-9abf-9d0cc6321efc 出现次数为： 6
-URL: 100172c0-3bbe-432c-99dd-e57103072cb7 出现次数为： 1
-原始数据过滤掉不重复后的统计结果 
-URL: 7e217d04-d0df-4424-a14f-1260d589a862 出现次数为： 5
-URL: 7d686a91-4815-4999-b03a-47cb4da64931 出现次数为： 3
-URL: 3b430af0-fd71-4ba8-8d4e-e96b958e44f8 出现次数为： 10
-URL: c9eb3280-abc4-459a-943a-939e9f5a80f4 出现次数为： 8
-URL: a5b30f59-bfb6-4683-9194-dbdbed3b9448 出现次数为： 4
-URL: 85295055-bc46-43db-9c82-3b29dd83fe2d 出现次数为： 9
-URL: 5f06f65b-9d1a-4746-9abf-9d0cc6321efc 出现次数为： 6
-URL: 78d0b9b1-a348-4609-bbb1-e4d61c900b7b 出现次数为： 7
-URL: a0229f07-5e90-4da4-ad5a-662792c4f6b3 出现次数为： 2
-出现次数排名前5的URL为
-5f06f65b-9d1a-4746-9abf-9d0cc6321efc 次数 6
-78d0b9b1-a348-4609-bbb1-e4d61c900b7b 次数 7
-c9eb3280-abc4-459a-943a-939e9f5a80f4 次数 8
-85295055-bc46-43db-9c82-3b29dd83fe2d 次数 9
-3b430af0-fd71-4ba8-8d4e-e96b958e44f8 次数 10
+/**
+ * 反转链表-递归方式实现
+ * @param head
+ * @return
+ */
+private static Node recursiveReverseNode(Node head){
+    if (head == null || head.next == null){
+        return head;
+    }
+    Node next = head.next;
+    Node reverse = recursiveReverseNode(next);
+    next.next = head;
+    head.next= null;
+    return reverse;
+}
+```
+
+- 数字各位相加
+```
+给定一个非负整数 num，反复将各个位上的数字相加，直到结果为一位数。
+
+示例:
+
+输入: 38
+输出: 2
+解释: 各位相加的过程为：3 + 8 = 11, 1 + 1 = 2。 由于 2 是一位数，所以返回 2。
+
+/**
+ * 使用递归调用得方式实现
+ * @param num
+ * @return
+ */
+private static int addEveryNumRecursive(int num){
+    if (num < 10){
+        return num;
+    }
+    int next = 0;
+    while (num != 0){
+        /*
+        这一步是通过对 10 取模将各个位依次相加
+         */
+        next = next + num % 10;
+
+        /*
+        这一步是逐渐将 4位数取前面3位，3位数取前面2位
+         */
+        num = num / 10;
+    }
+    return addEveryNumRecursive(next);
+}
+```
+
+## 数组问题
+- 2数之和(1)
+```
+给定一个整数数组 nums 和一个目标值 target，请你在该数组中找出和为目标值的那 两个 整数，并返回他们的数组下标。
+
+你可以假设每种输入只会对应一个答案。但是，数组中同一个元素不能使用两遍
+给定 nums = [2, 7, 11, 15], target = 9
+
+因为 nums[0] + nums[1] = 2 + 7 = 9
+所以返回 [0, 1]
+
+/**
+ * 时间复杂度 O(N)
+ *
+ * @param array
+ * @param sum
+ * @return
+ */
+private static int[] findSumIndex(int[] array, int sum){
+    Map<Integer,Integer> map = new HashMap<>();
+    for (int i=0; i< array.length; i++){
+        // value + array[i] = sum, 因此做个减法找出 array[i] 的剩下那部分
+        int value = sum - array[i];
+        if (map.containsKey(value)){
+            return new int[]{map.get(value), i};
+        }
+        map.put(array[i], i);
+    }
+    return new int[]{0};
+}
+```
+
+## 栈问题
+- 链表反转
+```
+/**
+ * 反转链表--栈方式实现
+ * @param head
+ * @return
+ */
+private static Node reverseNodeStack(Node head){
+    Stack<Node> stack = new Stack<>();
+    /*
+    依次摘除链表的引用关系，把节点放入栈里面
+     */
+    while (head != null){
+        stack.push(head);
+        head = head.next;
+    }
+    if (stack.isEmpty()){
+        return null;
+    }
+    /*
+    pop出来的第一个节点是新的头结点
+    头节点先保存起来
+     */
+    Node headNode = stack.pop();
+    Node newHead = headNode;
+    while (!stack.isEmpty()){
+        /*
+        把pop出来的节点逐步的挂到上一个节点
+        不断的把下一个节点当成头节点
+         */
+        Node temp = stack.pop();
+        headNode.next = temp;
+        headNode = headNode.next;
+    }
+    /*
+     * 最后一个节点就是反转之前的头节点，现在变成尾节点
+     * 要让尾节点的 next 为空，否则会形成环
+     */
+    headNode.next = null;
+    return newHead;
+}
+```
+
+## 大小顶堆问题
+- 数组中的第K个最大元素(215)
+```
+/**
+ * 常见思路是用排序，然后获取 第 k 个元素，但是这样全部数据都拿来排序
+ *
+ * 前面第K个最大元素，就只需要处理 前面 k 个元素即可
+ *
+ * 只要将数组元素全部添加到小顶堆，则堆顶就是 第 k 个大的元素
+ *
+ * 时间复杂度为 O(Nlogk)
+ * @param array
+ * @param k
+ * @return
+ */
+private static int findKthNum(int[] array, int k){
+    if (array.length == 0){
+        return 0;
+    }
+    PriorityQueue<Integer> minHeap = new PriorityQueue<>();
+    for (int i : array) {
+        if (minHeap.size()<k){
+            minHeap.add(i);
+        } else if (i > minHeap.peek()){
+            minHeap.poll();
+            minHeap.add(i);
+        }
+    }
+    return minHeap.poll();
+}
+```
+- 找出数组的中位数(41)
+```
+/**
+ * 不用排序的方式，而是用大顶堆，小顶堆的思路来实现
+ * 不断的遍历数组，把数组的数拿出来判断，放到2个堆里面，放完之后调整堆
+ *
+ * 大顶堆，用来存放数组较小的数，放在左边
+ * 小顶堆，用来存放数组较大的数，放在右边
+ *
+ * 如果数组长度是奇数，左边的大顶堆中存放 n/2+1 个数，右边的小顶堆存放剩下的数
+ * 数组遍历完之后，左边的大顶堆的堆顶就是中位数
+ *
+ * 如果数组长度是奇数，左边的大顶堆中存放 n/2 个数，右边的小顶堆存放n/2 个数
+ * 数组遍历完之后，大顶堆和小顶堆的堆顶的平均数就是 中位数
+ *
+ * 时间复杂度 O(logN)
+ * @param array
+ * @return
+ */
+private static double findMinddleNum(int[] array) {
+    //小顶堆，用来存放数组较大的数，放在右边
+    PriorityQueue<Integer> minHeap = new PriorityQueue<>();
+
+    //大顶堆，用来存放数组较小的数，放在左边
+    PriorityQueue<Integer> maxHeap = new PriorityQueue<>((o1, o2) -> o2 - o1);
+
+    int mindLenght = 0;
+    if (array.length % 2 == 0){
+        mindLenght = array.length / 2;
+    } else {
+        mindLenght = array.length / 2 + 1;
+    }
+    for (int i : array) {
+        //默认放到左边的大顶堆 (用来存放数组较小的数)
+        if (maxHeap.size() == 0 || i <= maxHeap.peek()){
+            maxHeap.add(i);
+            //如果大顶堆的个数已经比小顶堆的多
+            if (maxHeap.size() > mindLenght){
+                //则把大顶堆的堆顶 转移到 小顶堆
+                minHeap.add(maxHeap.poll());
+            }
+        } else {
+            minHeap.add(i);
+            //如果小顶堆的个数 比大顶堆的个数多
+            if (maxHeap.size() < mindLenght){
+                //则把小顶堆的堆顶转移到大顶堆
+                maxHeap.add(minHeap.poll());
+            }
+        }
+    }
+    if (maxHeap.size() == minHeap.size()){
+        return (maxHeap.peek() + minHeap.peek()) / 2;
+    }
+    return maxHeap.peek();
+}
+```
+
+- 数组出现频率前 k 高的元素(347)
+```
+给定一个非空的整数数组，返回其中出现频率前 k 高的元素。
+
+输入: nums = [1,1,1,2,2,3], k = 2
+输出: [1,2]
+
+private static List<Integer> getTopFreqNum(int[] array, int k){
+    if (array.length == 0){
+        return new ArrayList<>();
+    }
+    Map<Integer, Integer> map = new HashMap<>();
+    for (int i : array) {
+        if (map.containsKey(i)){
+            //如果数字在map中重复，将次数加1
+            Integer times = map.get(i);
+            map.put(i, times + 1);
+        } else {
+            map.put(i, 1);
+        }
+    }
+
+    /*
+    常见的大小顶堆是根据关键字维护的，但是在这个例子中
+    不能用数字本身来比较，而是要用数字出现的次数，就是map 的value 来比较
+     */
+    PriorityQueue<Integer> minHeap = new PriorityQueue<>(Comparator.comparing(map::get));
+    for (Integer key : map.keySet()) {
+        if (minHeap.size() < k){
+            minHeap.add(key);
+        } else if (map.get(key) > map.get(minHeap.peek())){
+            /*
+            小顶堆的堆顶的频率最小，先构建出一个小顶堆，如果后面的频率比堆顶还大,
+            则将新的元素把堆顶替换，堆会重新调整
+             */
+            minHeap.poll();
+            minHeap.add(key);
+        }
+    }
+    List<Integer> res = new ArrayList<>();
+    while (!minHeap.isEmpty()) {
+        res.add(minHeap.remove());
+    }
+    return res;
+
+}
 ```
