@@ -226,7 +226,7 @@ private static Node recursiveReverseNode(Node head){
 }
 ```
 
-- 数字各位相加
+- 数字各位相加(258)
 ```
 给定一个非负整数 num，反复将各个位上的数字相加，直到结果为一位数。
 
@@ -261,7 +261,7 @@ private static int addEveryNumRecursive(int num){
 }
 ```
 
-## 数组问题
+## 哈希表相关问题
 - 2数之和(1)
 ```
 给定一个整数数组 nums 和一个目标值 target，请你在该数组中找出和为目标值的那 两个 整数，并返回他们的数组下标。
@@ -293,8 +293,36 @@ private static int[] findSumIndex(int[] array, int sum){
 }
 ```
 
+- 字符串中的第一个唯一字符(387)
+```
+/**
+ * 将字符与次数放到 map 中，
+ * 遍历字符数组，找出第一个次数位1 的字符，返回下标
+ * 时间复杂度 O(N)
+ */
+private static int firstUniqChar(String s) {
+    if (s == null || s.equals("")){
+        return -1;
+    }
+
+    Map<Character, Integer> map = new HashMap<>();
+    int len = s.length();
+    for (int i=0; i< len; i++){
+        Character character = s.charAt(i);
+        map.put(character, map.getOrDefault(character, 0) + 1);
+    }
+    for (int i=0; i< len; i++){
+        if (map.get(s.charAt(i)) == 1){
+            return i;
+        }
+    }
+    return -1;
+}
+```
+
+
 ## 栈问题
-- 链表反转
+- 链表反转(206)
 ```
 /**
  * 反转链表--栈方式实现
@@ -470,5 +498,33 @@ private static List<Integer> getTopFreqNum(int[] array, int k){
     }
     return res;
 
+}
+```
+
+## 数字问题
+- 整数反转(7)
+```
+/**
+ * 每次拿末尾数字，然后整个数 除以 10
+ * @param num
+ * @return
+ */
+private static int reverseInteger(int num){
+    int res = 0;
+    while (num != 0){
+        //每次取末尾数字
+        int tmp = num % 10;
+        //判断是否 大于 最大32位整数
+        if (res>214748364 || (res==214748364 && tmp>7)) {
+            return 0;
+        }
+        //判断是否 小于 最小32位整数
+        if (res<-214748364 || (res==-214748364 && tmp<-8)) {
+            return 0;
+        }
+        res = res * 10 + tmp;
+        num = num / 10;
+    }
+    return res;
 }
 ```
